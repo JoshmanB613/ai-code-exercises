@@ -1,1 +1,259 @@
+I need to work on the Task Manager(Python) in this codebase, but I'm not sure where the code for this feature lives.
 
+My approach so far:
+
+-I've searched by navigating through the project structure rather than using keyword searches.
+-I looked in the following directories:
+ *ai-code-exercises/
+ *use-cases/
+ *use-cases/task-manager/
+ *use-cases/task-manager/python/
+I think the feature is split across different components, with:
+ *app.py acting as the application entry point,
+ *cli.py handling user interaction,
+ *models.py defining the application's data models,
+ *storage.py handling saving and loading of task data.
+
+Project structure:
+ai-code-exercises/
+│
+├── .gitignore
+├── README.md
+│
+└── use-cases/
+    │
+    ├── code-algorithms/
+    ├── code-comprehension-001/
+    ├── code-reviews-001/
+    ├── debug-errors-001/
+    ├── debug-limitations/
+    ├── debug-performance/
+    ├── refactor-functions/
+    ├── refactor-patterns/
+    ├── testing-001/
+    │
+    └── task-manager/
+        │
+        ├── java/
+        ├── javascript/
+        └── python/
+            ├── app.py
+            ├── cli.py
+            ├── models.py
+            └── storage.py
+
+Based on my exploration, these files might be relevant, but I'm not sure:
+
+*app.py
+*cli.py
+*models.py
+*storage.py
+
+With the above Can you help me:
+1. Evaluate my search approach and suggest improvements
+2. Identify which files and directories most likely contain the implementation for this feature
+3. Suggest specific search terms or patterns that would be more effective
+4. Explain what parts of the feature might be located in different areas of the codebase
+5. Recommend a step-by-step investigation process to understand the complete feature flow
+
+Also, what questions could I ask myself as I'm exploring the code to ensure I'm on the right track? What specific patterns should I look for to confirm I've found all the relevant parts?
+
+After your guidance, could you give me a small challenge to test my understanding of how to navigate this feature's code?
+
+
+
+Response from AI
+When engineers join a new codebase, they don’t start by reading everything. They build a mental map by tracing execution and data flow.
+Here’s a practical, repeatable way to investigate any unfamiliar codebase (including your task-manager/python project).
+
+1. Start with ONE question (not the whole project)
+Don’t ask:
+“How does the whole system work?”
+Ask:
+“What happens when I run this program?”
+or more specific:
+“What happens when I add a task?”
+Everything you do should support answering one question at a time.
+2. Find the entry point (where execution starts)
+
+In Python projects, look for:
+app.py
+main()
+if __name__ == "__main__":
+
+This tells you:
+“Where does the program begin when I run python app.py?”
+In your project, that’s your starting node.
+3. Identify the “control center”
+Now open the entry file and ask:
+“Who is this file talking to?”
+Look for imports like:
+cli.py
+storage.py
+models.py
+This tells you:
+“This file is not the whole program—it delegates work elsewhere.”
+At this stage, you are building a map of modules, not understanding logic yet.
+4. Follow execution like a chain (NOT file-by-file reading)
+This is the most important shift.
+Instead of reading:
+app.py → cli.py → models.py → storage.py (line by line)
+You do this:
+Step A: Find the first action
+
+Example:
+
+run()
+start()
+main_menu()
+Step B: Ask:
+“What function is called next?”
+Step C: Jump directly there
+You are tracing:
+function → function → function
+not reading files top to bottom.
+5. Separate the system into 4 roles (this is key)
+Almost every CRUD-style project like your Task Manager has these layers:
+
+1. Input layer (CLI)
+📍 cli.py
+Responsible for:
+
+input()
+menus
+user choices
+
+Ask:
+“What does the user type here?”
+2. Orchestration layer (controller)
+📍 often app.py
+Responsible for:
+deciding what happens next
+calling other modules
+Ask:
+“What does this file coordinate?”
+3. Data model layer
+📍 models.py
+Responsible for:
+structure of data (Task, User, etc.)
+Ask:
+“What is a Task made of?”
+4. Persistence layer
+📍 storage.py
+Responsible for:
+saving data
+loading data
+Ask:
+“Where does data go when the program ends?”
+Once you understand these 4 roles, most confusion disappears.
+6. Use “follow the data”, not just functions
+Instead of only tracking functions, track the Task object:
+Ask:
+Step 1
+Where is a Task created?
+Step 2
+Where is it modified?
+Step 3
+Where is it stored?
+Step 4
+Where is it displayed?
+
+This gives you a data lifecycle map:
+
+User input
+   ↓
+Task created (models.py)
+   ↓
+Stored in memory (app.py / list)
+   ↓
+Saved (storage.py)
+   ↓
+Loaded again (storage.py)
+   ↓
+Displayed (cli.py)
+
+This is how real engineers understand systems.
+
+7. Use “anchor points” in code
+Instead of reading everything, search for anchors:
+Entry anchors
+
+main
+__main__
+Behavior anchors
+add
+delete
+update
+list
+Data anchors
+class Task
+Task(
+Storage anchors
+save
+load
+open(
+json
+
+Each anchor tells you:
+“Start your investigation here.”
+
+8. Confirm understanding using reverse questions
+After you think you understand something, test yourself:
+Ask:
+If I delete storage.py, what breaks?
+If I remove cli.py, can the program still run?
+Where is the actual list of tasks stored?
+Is data stored in memory or a file?
+Which function actually changes state?
+If you can’t answer these, you haven’t fully traced the flow yet.
+
+9. The “3-pass rule” (how professionals read code)
+Pass 1: Orientation (no deep reading)
+Identify files
+Identify entry point
+Identify main modules
+Pass 2: Flow tracing
+Follow one feature end-to-end (e.g., “add task”)
+Pass 3: Detail reading
+Only now read line-by-line when needed
+Most juniors do Pass 3 first (and get lost).
+
+10. Mental model you should always maintain
+
+Think of the program like this:
+          USER
+            ↓
+        CLI (input)
+            ↓
+     APP (decision maker)
+            ↓
+   MODEL (Task object)
+            ↓
+ STORAGE (save/load)
+
+Every feature is just a path through this pipeline.
+Small practical challenge (do this next)
+Without guessing, trace this exact flow:
+“What happens when I add a task?”
+
+Answer in steps:
+Which file receives the input?
+Which function handles the command?
+Where is the Task object created?
+Where is it stored in memory?
+Where is it saved permanently?
+
+Then draw it like:
+
+CLI →
+APP →
+MODEL →
+STORAGE →
+FILE
+
+If you can do this for one feature, you can navigate any codebase.
+If you want next, I can 
+show you how to read app.py like a map instead of code, which is usually the first real breakthrough moment for juniors.
+
+
+****My Findings**** 
