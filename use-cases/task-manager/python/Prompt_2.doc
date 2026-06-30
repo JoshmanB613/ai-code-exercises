@@ -257,3 +257,28 @@ show you how to read app.py like a map instead of code, which is usually the fir
 
 
 ****My Findings**** 
+
+In this exercise I thought I should/needed to understand everything in the project at the get go.
+
+I learned that- a better appraoch is to investigate everything one at a time
+
+Example
+What happens when I create a task?
+What happens when I list tasks?
+What happens when I delete a task?
+
+One of the first things to locate is where the execution begins
+
+Indicator:
+if __name__ == "__main__"
+or
+main()
+
+Initially I assumed app.py has an indicator because of the name, but found out it is in cli.py. which taught me to verify assumptions by reading code rather than relying on names.
+
+Even before opening files names I should have an idea of what the file might be about
+
+cli.py looks like its the user interaction
+app.py looks like its the application entry point
+models.py looks like its application's data's model,
+storage.py looks like its how data is saved , loaded and handled
