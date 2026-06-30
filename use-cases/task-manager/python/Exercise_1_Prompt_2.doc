@@ -60,9 +60,8 @@ Also, what questions could I ask myself as I'm exploring the code to ensure I'm 
 
 After your guidance, could you give me a small challenge to test my understanding of how to navigate this feature's code?
 
+****Response from AI****
 
-
-Response from AI
 When engineers join a new codebase, they don’t start by reading everything. They build a mental map by tracing execution and data flow.
 Here’s a practical, repeatable way to investigate any unfamiliar codebase (including your task-manager/python project).
 
@@ -255,30 +254,30 @@ If you can do this for one feature, you can navigate any codebase.
 If you want next, I can 
 show you how to read app.py like a map instead of code, which is usually the first real breakthrough moment for juniors.
 
+****My Findings****
+I only saw files and it was a bit overwhelming, but chatgpt(The AI I am using) suggested I find an entry point.
 
-****My Findings**** 
+Common point
 
-In this exercise I thought I should/needed to understand everything in the project at the get go.
-
-I learned that- a better appraoch is to investigate everything one at a time
-
-Example
-What happens when I create a task?
-What happens when I list tasks?
-What happens when I delete a task?
-
-One of the first things to locate is where the execution begins
-
-Indicator:
-if __name__ == "__main__"
+if __name__ == "__main__":
 or
 main()
 
-Initially I assumed app.py has an indicator because of the name, but found out it is in cli.py. which taught me to verify assumptions by reading code rather than relying on names.
+and before reading code, one could make a calculated guess based on file names i.e app.py looks like it coordinates the application or starts execution.
 
-Even before opening files names I should have an idea of what the file might be about
+It also suggested I should read files by following execution of which i was just thinking of openning files and starting to read code.
+app.py
+↓
+cli.py
+↓
+models.py
+↓
+storage.py
 
-cli.py looks like its the user interaction
-app.py looks like its the application entry point
-models.py looks like its application's data's model,
-storage.py looks like its how data is saved , loaded and handled
+From the entry point I should go through code line by line, that helps with finding the next function call. Eventually continue tracing execution.
+
+ChatGPT also added questions I can ask such as:
+Where is a Task created?
+Where is it modified?
+Where is it stored?
+Where is it displayed?
