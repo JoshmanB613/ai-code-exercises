@@ -8,7 +8,7 @@ My approach so far:
  *use-cases/
  *use-cases/task-manager/
  *use-cases/task-manager/python/
-I think the feature is split across different components, with:
+-I think the feature is split across different components, with:
  *app.py acting as the application entry point,
  *cli.py handling user interaction,
  *models.py defining the application's data models,
