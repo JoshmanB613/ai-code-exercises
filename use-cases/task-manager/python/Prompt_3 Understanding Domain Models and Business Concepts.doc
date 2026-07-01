@@ -186,7 +186,7 @@ class TaskStatus(Enum):
     DONE = "done"
 which is converting raw numbers.
 
-- I'm confused about why [specific aspect you don't understand]
+- I'm confused about TaskStatus(status filter), It looks like its returning numbers but also looks like its returning strings.
 
 Could you, as a senior developer:
 1. Validate my current understanding, correcting any misconceptions
@@ -195,6 +195,694 @@ Could you, as a senior developer:
 4. Clarify any domain-specific terminology or patterns I might be missing
 5. Help me connect these models to actual user-facing features or business processes
 
+****AI Response****
+
+1. Validate your current understanding
+✅ "The system seems to be modeling a task management tool."
+
+Correct.
+
+More specifically, it models the lifecycle of a task.
+
+A task isn't just text. It has business information attached to it:
+
+title
+description
+priority
+status
+due date
+tags
+creation date
+completion date
+
+The entire application exists to manage that lifecycle.
+
+✅ "I think models.py and app.py are related because some classes in models.py are used in app.py."
+
+Also correct.
+
+I'd just phrase it more like this:
+
+models.py defines what a Task is. app.py defines what users are allowed to do with a Task.
+
+Think of it this way:
+
+models.py
+-----------
+Defines the object
+
+Task
+
+↓
+
+app.py
+-----------
+Uses that object to perform business operations
+
+Create Task
+Update Task
+Delete Task
+List Task
+Complete Task
+
+So app.py depends on models.py, not the other way around.
+
+⚠️ Your interpretation of TaskStatus
+
+You wrote:
+
+which is converting raw numbers.
+
+This is the one misconception.
+
+It isn't converting numbers.
+
+It is converting strings into Enum objects.
+
+Look at your Enum carefully:
+
+class TaskStatus(Enum):
+    TODO = "todo"
+    IN_PROGRESS = "in_progress"
+    REVIEW = "review"
+    DONE = "done"
+
+Notice the values.
+
+They are strings.
+
+Not numbers.
+
+Then later:
+
+status = TaskStatus(status_filter)
+
+Suppose
+
+status_filter = "done"
+
+Python does this:
+
+TaskStatus("done")
+
+↓
+
+TaskStatus.DONE
+
+Likewise
+
+"in_progress"
+
+↓
+
+TaskStatus.IN_PROGRESS
+
+It converts a plain string into the proper enum member.
+
+The opposite would be:
+
+TaskStatus.DONE.value
+
+which gives
+
+"done"
+
+So think of it like this:
+
+String
+
+↓
+
+Enum
+
+↓
+
+Business Logic
+
+rather than
+
+Number
+
+↓
+
+Enum
+
+Numbers are only used in TaskPriority.
+
+2. Core domain concepts represented in this code
+
+Forget Python for a moment.
+
+Imagine you're explaining this system to a project manager.
+
+The business concepts are:
+
+Task
+
+The central business object.
+
+Everything revolves around it.
+
+Task
+
+contains
+
+Title
+Description
+Priority
+Status
+Tags
+Due Date
+Created Date
+Completed Date
+Status
+
+This answers:
+
+"Where is this task in its lifecycle?"
+
+Possible states:
+
+TODO
+
+↓
+
+IN_PROGRESS
+
+↓
+
+REVIEW
+
+↓
+
+DONE
+
+Notice something.
+
+This is actually a workflow.
+
+The application models work moving through stages.
+
+Priority
+
+This answers:
+
+"How important is this task?"
+
+LOW
+
+↓
+
+MEDIUM
+
+↓
+
+HIGH
+
+↓
+
+URGENT
+
+This affects how users organize work.
+
+Storage
+
+Another domain concept.
+
+The user expects:
+
+"When I close the program my tasks should still exist."
+
+So storage represents persistence.
+
+Statistics
+
+The business also wants reports.
+
+Questions like:
+
+How many tasks exist?
+How many are overdue?
+How many were completed this week?
+
+Those are business questions, not programming questions.
+
+3. Explain the relationships in business terms
+
+This is where junior developers usually improve the most.
+
+Don't think:
+
+TaskManager imports Task.
+
+Think:
+
+Relationship 1
+
+TaskManager manages Tasks.
+
+Business language:
+
+A manager is responsible for the entire lifecycle of a task.
+
+It creates them.
+
+Updates them.
+
+Deletes them.
+
+Completes them.
+
+Searches them.
+
+Relationship 2
+
+Task has one Status.
+
+Business meaning:
+
+Every task must always have a current state.
+
+Example
+
+TODO
+
+↓
+
+IN_PROGRESS
+
+↓
+
+REVIEW
+
+↓
+
+DONE
+
+A task can never be "between" two statuses.
+
+Relationship 3
+
+Task has one Priority.
+
+Business meaning:
+
+Every task has a level of importance.
+
+Relationship 4
+
+TaskManager uses TaskStorage
+
+Business meaning:
+
+The manager knows how to manage work.
+
+The storage knows how to save work.
+
+These responsibilities are intentionally separate.
+
+4. Domain-specific terminology and patterns
+
+There are several software engineering patterns hiding in this small project.
+
+Domain Model
+
+This is:
+
+class Task
+
+It represents a real business thing.
+
+Not a screen.
+
+Not a file.
+
+An actual concept.
+
+Enum
+TaskStatus
+
+TaskPriority
+
+Enums prevent invalid values.
+
+Instead of
+
+"doing"
+
+"started"
+
+"almost"
+
+"yes"
+
+the application forces users into valid business states.
+
+Service Layer
+
+This is
+
+TaskManager
+
+It coordinates business rules.
+
+It doesn't save files.
+
+It doesn't print menus.
+
+It makes business decisions.
+
+Persistence Layer
+TaskStorage
+
+Responsible for reading and writing data.
+
+Nothing else.
+
+Entity
+
+The Task class is an entity.
+
+Why?
+
+Because every task has its own identity.
+
+uuid
+
+Every task is unique even if two tasks have the same title.
+
+5. Connect these models to user-facing features
+
+Let's connect code to what the user actually experiences.
+
+User creates a task
+
+CLI
+
+↓
+
+TaskManager
+
+↓
+
+Task()
+
+↓
+
+Storage
+
+↓
+
+JSON file
+
+User marks task complete
+
+CLI
+
+↓
+
+TaskManager.update_task_status()
+
+↓
+
+Task.mark_as_done()
+
+↓
+
+Storage.save()
+
+User lists overdue tasks
+
+CLI
+
+↓
+
+TaskManager.list_tasks()
+
+↓
+
+Storage.get_overdue_tasks()
+
+↓
+
+Task.is_overdue()
+
+↓
+
+Results returned
+
+User requests statistics
+
+CLI
+
+↓
+
+TaskManager.get_statistics()
+
+↓
+
+Count statuses
+
+↓
+
+Count priorities
+
+↓
+
+Count overdue
+
+↓
+
+Display report
+
+Your confusion: TaskStatus(status_filter)
+
+This is the part I'd spend extra time on because it's a common stumbling block.
+
+Suppose the user types
+
+list --status done
+
+Inside the CLI,
+
+args.status
+
+contains
+
+"done"
+
+Now app.py receives
+
+status_filter = "done"
+
+This line executes
+
+status = TaskStatus(status_filter)
+
+Think of it as asking Python:
+
+"Find me the TaskStatus member whose value is 'done'."
+
+Python answers
+
+TaskStatus.DONE
+
+Now the storage layer can compare enums:
+
+task.status == TaskStatus.DONE
+
+instead of comparing raw strings everywhere.
+
+This is safer because enums reduce typos and make the code more expressive.
+
+One small refinement to your understanding
+
+Instead of saying:
+
+"TaskStatus converts raw numbers."
+
+I would write:
+
+"TaskStatus(status_filter) converts a user-provided status string (such as 'done' or 'todo') into a TaskStatus enum object so the rest of the application can work with a controlled set of valid task states."
+
+That's exactly how a senior developer would describe it.
+
+
 Then, please ask me 3-5 questions that would test my understanding of this domain model. These should be questions that make me think about the business logic, not just the code syntax.
 
+****AIs Response****
+
+1. Why does every Task begin with the status TODO instead of allowing the user to choose any status when creating it?
+
+What this tests: Whether you understand that the application models a task lifecycle. In many businesses, a task is always created as "to do" and only later progresses to "in progress", "review", and "done".
+
+2. Why does the application use TaskStatus and TaskPriority as Enums instead of storing plain strings or integers everywhere?
+
+What this tests: Whether you understand the business value of restricting tasks to valid states and priorities. Enums prevent invalid values like "finished" or "very urgent" from entering the system.
+
+3. A task has both created_at and completed_at. Why are both important from a business perspective?
+
+What this tests: Whether you recognize that the application isn't just storing tasks—it is tracking their history. These timestamps allow features like:
+
+reporting
+productivity statistics
+completion metrics
+overdue calculations
+4. If a task is marked as DONE, why does the application also call mark_as_done() instead of only changing the status?
+
+What this tests: Whether you notice that completing a task has business side effects. Besides changing the status, the system records the completion time and updates the last modified time. A business event often affects multiple pieces of data.
+
+5. Suppose the business introduces a new requirement: Archived tasks should no longer appear in normal task lists but should still be stored for historical purposes.
+
+Without thinking about code, what parts of the domain model would you expect to change?
+
+What this tests: Whether you can think like a software designer rather than just a programmer. A good answer might mention:
+
+the task lifecycle (a new status or concept)
+filtering logic
+listing behavior
+statistics
+storage
+
+rather than immediately thinking about specific functions.
+
+Bonus question (the one I'd ask a junior during onboarding)
+
+Imagine I delete storage.py tomorrow and replace it with a database implementation.
+
+Which parts of the business logic should remain exactly the same, and why?
+
+If you can answer that confidently, it shows you've understood the separation between:
+
+Domain model (Task, TaskStatus, TaskPriority)
+Business logic (TaskManager)
+Persistence (TaskStorage)
+
+That separation is one of the most important design ideas in this project.
+
 Finally, suggest a simple diagram I could sketch to visualize these relationships that would help solidify my understanding.
+
+****AIs Response****
+Here's a simple diagram you can draw by hand:
+
+                     USER
+                       │
+                       │
+                       ▼
+                 Task Manager
+             (Business Service)
+                 app.py
+                       │
+      ┌────────────────┼────────────────┐
+      │                │                │
+      ▼                ▼                ▼
+ Create Task      Update Task      View Tasks
+      │                │                │
+      └────────────────┼────────────────┘
+                       │
+                       ▼
+                   Task Model
+                 (models.py)
+
+      +--------------------------------+
+      | id                             |
+      | title                          |
+      | description                    |
+      | priority (LOW → URGENT)        |
+      | status (TODO → DONE)           |
+      | due_date                       |
+      | tags                           |
+      | created_at                     |
+      | updated_at                     |
+      | completed_at                   |
+      +--------------------------------+
+             ▲                ▲
+             │                │
+             │                │
+      TaskPriority       TaskStatus
+          Enum               Enum
+             │                │
+             └───────┬────────┘
+                     │
+                     ▼
+              TaskStorage
+              (storage.py)
+                     │
+         Save / Load / Update / Delete
+                     │
+                     ▼
+                tasks.json
+
+How to think about this diagram
+
+Notice that there are different responsibilities:
+
+User → performs actions like creating, updating, listing, or deleting tasks.
+TaskManager (app.py) → contains the business rules. It decides how a task should be created, updated, or filtered.
+Task (models.py) → represents the business object. It answers the question, "What information defines a task?"
+TaskPriority and TaskStatus → represent valid business values. They prevent invalid priorities or statuses from being used.
+TaskStorage (storage.py) → persists tasks by saving them to and loading them from tasks.json.
+
+One more diagram that senior developers often keep in their heads
+
+This shows the lifecycle of a task rather than the code structure.
+
+User creates task
+        │
+        ▼
+Task(title, priority, due date, tags)
+        │
+        ▼
+Status = TODO
+        │
+        ▼
+Can be updated
+        │
+        ├────────► IN_PROGRESS
+        │
+        ├────────► REVIEW
+        │
+        └────────► DONE
+                    │
+                    ▼
+        completed_at is recorded
+
+This is valuable because it focuses on the business process instead of the code.
+
+Business Actor
+      │
+      ▼
+Business Service
+      │
+      ▼
+Business Entity
+      │
+      ▼
+Persistence
+      │
+      ▼
+Storage
+
+For your project, that becomes:
+
+User
+   │
+   ▼
+TaskManager
+   │
+   ▼
+Task
+   │
+   ▼
+TaskStorage
+   │
+   ▼
+tasks.json
+
+If you can draw this from memory and explain what each box is responsible for in business terms, you've moved beyond just reading code—you've started thinking the way software engineers model a system.
+
+
+
+****My Findings****
+
+AI really gave me a clear and concise way of how I should look at the different line of codes, over and above, AI makes most of the work easier as it also provides questions that a developer can use to help with understanding code logic, like why was this naming used for this class or function or variable, why does the application use Enum to store strings from TaskStautus and TaskPriority, while it could store them plainly, and it provided me with a model diagram + business flow rather than a technical drawing
