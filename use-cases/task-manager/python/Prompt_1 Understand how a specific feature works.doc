@@ -1,0 +1,1435 @@
+I'm trying to understand how cli.py works in our python codebase.
+This feature seems to handle user interface.
+
+Here are the key files that appear to be involved:
+1. app.py - Seems to be layers out or creates logic
+2. storage.py - Might be handling how data is stored
+3. models.py - Contains references to what the data is
+
+Here are code snippets from parts I'm struggling to understand:
+
+# task_manager/app.py
+import argparse
+from datetime import datetime, timedelta
+from .models import Task, TaskPriority, TaskStatus
+from .storage import TaskStorage
+
+class TaskManager:
+    def __init__(self, storage_path="tasks.json"):
+        self.storage = TaskStorage(storage_path)
+
+    def create_task(self, title, description="", priority_value=2,
+                   due_date_str=None, tags=None):
+        priority = TaskPriority(priority_value)
+        due_date = None
+        if due_date_str:
+            try:
+                due_date = datetime.strptime(due_date_str, "%Y-%m-%d")
+            except ValueError:
+                print("Invalid date format. Use YYYY-MM-DD")
+                return None
+
+        task = Task(title, description, priority, due_date, tags)
+        task_id = self.storage.add_task(task)
+        return task_id
+
+    def list_tasks(self, status_filter=None, priority_filter=None, show_overdue=False):
+        if show_overdue:
+            return self.storage.get_overdue_tasks()
+
+        if status_filter:
+            status = TaskStatus(status_filter)
+            return self.storage.get_tasks_by_status(status)
+
+        if priority_filter:
+            priority = TaskPriority(priority_filter)
+            return self.storage.get_tasks_by_priority(priority)
+
+        return self.storage.get_all_tasks()
+
+    def update_task_status(self, task_id, new_status_value):
+        new_status = TaskStatus(new_status_value)
+        if new_status == TaskStatus.DONE:
+            task = self.storage.get_task(task_id)
+            if task:
+                task.mark_as_done()
+                self.storage.save()
+                return True
+        else:
+            return self.storage.update_task(task_id, status=new_status)
+
+    def update_task_priority(self, task_id, new_priority_value):
+        new_priority = TaskPriority(new_priority_value)
+        return self.storage.update_task(task_id, priority=new_priority)
+
+    def update_task_due_date(self, task_id, due_date_str):
+        try:
+            due_date = datetime.strptime(due_date_str, "%Y-%m-%d")
+            return self.storage.update_task(task_id, due_date=due_date)
+        except ValueError:
+            print("Invalid date format. Use YYYY-MM-DD")
+            return False
+
+    def delete_task(self, task_id):
+        return self.storage.delete_task(task_id)
+
+    def get_task_details(self, task_id):
+        return self.storage.get_task(task_id)
+
+    def add_tag_to_task(self, task_id, tag):
+        task = self.storage.get_task(task_id)
+        if task:
+            if tag not in task.tags:
+                task.tags.append(tag)
+                self.storage.save()
+            return True
+        return False
+
+    def remove_tag_from_task(self, task_id, tag):
+        task = self.storage.get_task(task_id)
+        if task and tag in task.tags:
+            task.tags.remove(tag)
+            self.storage.save()
+            return True
+        return False
+
+    def get_statistics(self):
+        tasks = self.storage.get_all_tasks()
+        total = len(tasks)
+
+        # Count by status
+        status_counts = {status.value: 0 for status in TaskStatus}
+        for task in tasks:
+            status_counts[task.status.value] += 1
+
+        # Count by priority
+        priority_counts = {priority.value: 0 for priority in TaskPriority}
+        for task in tasks:
+            priority_counts[task.priority.value] += 1
+
+        # Count overdue
+        overdue_count = len([task for task in tasks if task.is_overdue()])
+
+        # Count completed in last 7 days
+        seven_days_ago = datetime.now() - timedelta(days=7)
+        completed_recently = len([
+            task for task in tasks
+            if task.completed_at and task.completed_at >= seven_days_ago
+        ])
+
+        return {
+            "total": total,
+            "by_status": status_counts,
+            "by_priority": priority_counts,
+            "overdue": overdue_count,
+            "completed_last_week": completed_recently
+        }
+
+
+# task_manager/storage.py
+import json
+import os
+from datetime import datetime
+from .models import Task, TaskPriority, TaskStatus
+
+class TaskEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, Task):
+            task_dict = obj.__dict__.copy()
+            task_dict['priority'] = obj.priority.value
+            task_dict['status'] = obj.status.value
+            # Convert datetime objects to ISO format strings
+            for key in ['created_at', 'updated_at', 'due_date', 'completed_at']:
+                if task_dict.get(key) is not None:
+                    task_dict[key] = task_dict[key].isoformat()
+            return task_dict
+        return super().default(obj)
+
+class TaskDecoder(json.JSONDecoder):
+    def __init__(self, *args, **kwargs):
+        json.JSONDecoder.__init__(self, object_hook=self.object_hook, *args, **kwargs)
+
+    def object_hook(self, obj):
+        if 'id' in obj and 'title' in obj:
+            task = Task(obj['title'], obj.get('description', ''))
+            task.id = obj['id']
+            task.priority = TaskPriority(obj['priority'])
+            task.status = TaskStatus(obj['status'])
+
+            # Convert ISO format strings to datetime objects
+            for key in ['created_at', 'updated_at', 'completed_at']:
+                if obj.get(key):
+                    setattr(task, key, datetime.fromisoformat(obj[key]))
+
+            if obj.get('due_date'):
+                task.due_date = datetime.fromisoformat(obj['due_date'])
+
+            task.tags = obj.get('tags', [])
+            return task
+        return obj
+
+class TaskStorage:
+    def __init__(self, storage_path="tasks.json"):
+        self.storage_path = storage_path
+        self.tasks = {}
+        self.load()
+
+    def load(self):
+        if os.path.exists(self.storage_path):
+            try:
+                with open(self.storage_path, 'r') as f:
+                    tasks_data = json.load(f, cls=TaskDecoder)
+                    if isinstance(tasks_data, list):
+                        for task in tasks_data:
+                            self.tasks[task.id] = task
+            except Exception as e:
+                print(f"Error loading tasks: {e}")
+
+    def save(self):
+        try:
+            with open(self.storage_path, 'w') as f:
+                json.dump(list(self.tasks.values()), f, cls=TaskEncoder, indent=2)
+        except Exception as e:
+            print(f"Error saving tasks: {e}")
+
+    def add_task(self, task):
+        self.tasks[task.id] = task
+        self.save()
+        return task.id
+
+    def get_task(self, task_id):
+        return self.tasks.get(task_id)
+
+    def update_task(self, task_id, **kwargs):
+        task = self.get_task(task_id)
+        if task:
+            task.update(**kwargs)
+            self.save()
+            return True
+        return False
+
+    def delete_task(self, task_id):
+        if task_id in self.tasks:
+            del self.tasks[task_id]
+            self.save()
+            return True
+        return False
+
+    def get_all_tasks(self):
+        return list(self.tasks.values())
+
+    def get_tasks_by_status(self, status):
+        return [task for task in self.tasks.values() if task.status == status]
+
+    def get_tasks_by_priority(self, priority):
+        return [task for task in self.tasks.values() if task.priority == priority]
+
+    def get_overdue_tasks(self):
+        return [task for task in self.tasks.values() if task.is_overdue()]
+
+Could you:
+1. Explain in simple terms what this component actually does
+2. Walk me through the execution flow when [specific trigger/action happens]
+3. Clarify how these files interact with each other
+4. Identify any external dependencies or services this component relies on
+5. Explain any complex code blocks
+6. Provide a mental model I can use to think about this component
+
+****AIs Response****
+
+Absolutely. Before diving in, there's one small thing to point out:
+
+You mentioned cli.py, but you haven't included its code. The code you've shared is actually app.py and storage.py.
+
+From these files, I can infer how cli.py probably works, because CLI applications usually follow this architecture:
+
+User
+   │
+   ▼
+cli.py        ← User Interface (parses commands)
+   │
+   ▼
+app.py        ← Business Logic (TaskManager)
+   │
+   ▼
+storage.py    ← Data Access (loads/saves tasks)
+   │
+   ▼
+tasks.json    ← Persistent storage
+
+Let's break everything down.
+
+1. What this component actually does
+
+Think of the project as having three layers.
+
+┌──────────────────────────────┐
+│          cli.py              │
+│ "What did the user ask?"     │
+└──────────────┬───────────────┘
+               │
+               ▼
+┌──────────────────────────────┐
+│          app.py              │
+│ "How should the app behave?" │
+└──────────────┬───────────────┘
+               │
+               ▼
+┌──────────────────────────────┐
+│        storage.py            │
+│ "Where do we save the data?" │
+└──────────────┬───────────────┘
+               │
+               ▼
+          tasks.json
+
+Each layer has one responsibility.
+
+cli.py
+
+Handles interaction with the user.
+
+Example:
+
+python task.py add "Buy milk"
+
+Its only job is to understand
+
+"The user wants to add a task."
+
+It does not know how tasks are saved.
+
+app.py
+
+This is the brain of the application.
+
+It knows the business rules.
+
+Examples:
+
+How to create a task
+What priorities exist
+How to validate dates
+What "completed" means
+How to calculate statistics
+
+Notice it never opens a JSON file.
+
+Instead it says:
+
+"Storage, please save this."
+
+storage.py
+
+This is the librarian.
+
+It knows nothing about business rules.
+
+It only knows things like:
+
+Read file
+Write file
+Find task
+Delete task
+Save task
+models.py
+
+Although you didn't include it, we can infer it contains:
+
+Task
+
+TaskPriority
+
+TaskStatus
+
+These describe what a task actually is.
+
+Mental picture
+
+Imagine a restaurant.
+
+Customer
+    │
+    ▼
+Waiter
+    │
+    ▼
+Chef
+    │
+    ▼
+Pantry
+
+Now replace them.
+
+User
+    │
+    ▼
+cli.py
+    │
+    ▼
+TaskManager
+    │
+    ▼
+TaskStorage
+    │
+    ▼
+tasks.json
+2. Execution flow
+
+Let's walk through creating a task.
+
+Suppose the user types
+
+python task.py add "Study Python"
+
+The flow looks like this.
+
+User
+ │
+ ▼
+cli.py
+
+CLI parses the command.
+
+It figures out
+
+title = "Study Python"
+priority = 2
+
+Then it creates
+
+manager = TaskManager()
+
+Inside TaskManager
+
+self.storage = TaskStorage()
+
+Immediately,
+
+TaskStorage
+
+loads every saved task from
+
+tasks.json
+
+Now the CLI calls
+
+manager.create_task(...)
+
+Inside create_task():
+
+First
+
+priority = TaskPriority(priority_value)
+
+turns
+
+2
+
+into
+
+TaskPriority.MEDIUM
+
+Then
+
+task = Task(...)
+
+creates a Task object.
+
+Then
+
+self.storage.add_task(task)
+
+passes it to storage.
+
+Inside storage
+
+self.tasks[task.id] = task
+
+adds it to memory.
+
+Then
+
+self.save()
+
+writes everything to disk.
+
+Inside save
+
+json.dump(...)
+
+calls
+
+TaskEncoder
+
+which converts
+
+Task
+
+into JSON.
+
+Finally
+
+tasks.json
+
+is updated.
+
+Flow complete.
+
+3. How the files interact
+
+Think of arrows.
+
+cli.py
+    │
+    ▼
+TaskManager
+    │
+    ▼
+TaskStorage
+    │
+    ▼
+TaskEncoder
+    │
+    ▼
+tasks.json
+
+When loading,
+
+the direction reverses.
+
+tasks.json
+      │
+      ▼
+TaskDecoder
+      │
+      ▼
+TaskStorage
+      │
+      ▼
+TaskManager
+      │
+      ▼
+cli.py
+Who knows about whom?
+cli.py
+    knows TaskManager
+
+TaskManager
+    knows TaskStorage
+    knows Task
+
+TaskStorage
+    knows Task
+
+Task
+    knows nobody
+
+That's good architecture.
+
+4. External dependencies
+
+These files don't depend on databases or web services.
+
+Only standard Python libraries.
+
+argparse
+import argparse
+
+Used by CLI parsing.
+
+Example
+
+add
+list
+delete
+json
+json.dump()
+
+json.load()
+
+Converts Python objects into JSON.
+
+os
+os.path.exists()
+
+Checks if
+
+tasks.json
+
+already exists.
+
+datetime
+
+Used for
+
+created_at
+
+updated_at
+
+completed_at
+
+due_date
+
+and for checking overdue tasks.
+
+No database.
+
+No internet.
+
+No API.
+
+No cloud.
+
+Just
+
+Python
++
+JSON file
+5. Complex code blocks
+TaskEncoder
+
+This is one beginners often find confusing.
+
+Suppose you have
+
+task = Task(...)
+
+Python's JSON module cannot do
+
+json.dump(task)
+
+because it doesn't know what a Task is.
+
+So
+
+TaskEncoder
+
+teaches JSON.
+
+It says
+
+If you see a Task...
+
+convert it into a dictionary.
+
+Like
+
+Task
+
+↓
+
+{
+    "title":"Study",
+    "priority":2,
+    ...
+}
+dict
+task.__dict__
+
+returns
+
+{
+"title":...
+"description":...
+"priority":...
+}
+
+It's basically
+
+"Give me every variable inside this object."
+
+TaskDecoder
+
+This performs the reverse.
+
+JSON looks like
+
+{
+"title":"Study",
+"priority":2
+}
+
+The decoder says
+
+"Turn this back into a real Task object."
+
+update_task
+def update_task(self, task_id, **kwargs):
+
+The **kwargs syntax means
+
+"Accept any named arguments."
+
+For example,
+
+update_task(1, priority=3)
+
+becomes
+
+kwargs
+
+↓
+
+{
+"priority":3
+}
+
+or
+
+update_task(
+    1,
+    due_date=date,
+    priority=1
+)
+
+becomes
+
+{
+"due_date":date,
+"priority":1
+}
+
+Very flexible.
+
+List comprehensions
+
+Example
+
+return [
+    task
+    for task in self.tasks.values()
+    if task.status == status
+]
+
+This is just shorthand for
+
+result = []
+
+for task in self.tasks.values():
+    if task.status == status:
+        result.append(task)
+
+return result
+Statistics
+
+This
+
+status_counts = {
+    status.value:0
+    for status in TaskStatus
+}
+
+creates something like
+
+{
+"todo":0,
+"in_progress":0,
+"done":0
+}
+
+Then
+
+for task in tasks:
+
+increments the correct counter.
+
+6. Mental model
+
+I like thinking of this project as an office.
+
+                 User
+                  │
+                  ▼
+        Receptionist (cli.py)
+
+ "Customer wants to create a task."
+
+                  │
+                  ▼
+        Manager (TaskManager)
+
+ "Create it.
+ Validate it.
+ Set the priority.
+ Check the date."
+
+                  │
+                  ▼
+         Filing Clerk (TaskStorage)
+
+ "I'll store it."
+
+                  │
+                  ▼
+         Filing Cabinet
+
+           tasks.json
+
+Each person has one job.
+
+The receptionist never opens filing cabinets.
+
+The filing clerk never decides business rules.
+
+The manager never talks directly to customers.
+
+That's called separation of concerns, and it's one of the biggest ideas in software architecture.
+
+A simple diagram to sketch
+
+Here's a diagram I'd recommend drawing by hand:
+
+                   User
+                     │
+                     ▼
+               +-------------+
+               |   cli.py    |
+               | User input  |
+               +-------------+
+                      │
+        calls TaskManager methods
+                      │
+                      ▼
+             +------------------+
+             | TaskManager      |
+             | Business Logic   |
+             +------------------+
+               │            │
+      creates Task      asks Storage
+               │            │
+               ▼            ▼
+          +----------------------+
+          | TaskStorage          |
+          | Load / Save / Search |
+          +----------------------+
+                      │
+          uses Encoder/Decoder
+                      │
+                      ▼
+               +--------------+
+               | tasks.json   |
+               +--------------+
+
+This captures the responsibilities and data flow between the components without getting lost in implementation details.
+
+If you can also share cli.py and models.py, I can trace the exact execution path from a command like python task.py add "Buy milk" all the way through every function call, showing the call stack and the state changes at each step.
+
+
+I'm particularly confused about how storage.py saves or persists its data, so extra detail there would help.
+Finally, suggest 3 small code changes I could make to validate my understanding. Do not give the me change, and instead give me the requirement.
+
+****AIs Response****
+
+That's actually the most important part of this project to understand. Once storage.py clicks, the rest of the application becomes much easier to reason about.
+
+First, what problem is storage.py solving?
+
+Imagine there was no storage.py.
+
+manager = TaskManager()
+manager.create_task("Study Python")
+
+The task would exist only while the program is running.
+
+When you close the program:
+
+RAM is cleared
+↓
+
+All tasks disappear
+
+That's because Python variables live in memory (RAM).
+
+Persistence means:
+
+"Keep the data even after the program exits."
+
+That's exactly what storage.py is responsible for.
+
+Think of RAM vs Disk
+
+There are two places your data can live.
+
+               Fast
+                │
+                ▼
+
+        RAM (memory)
+
+        self.tasks
+
+Program closes
+↓
+
+Everything disappears
+
+versus
+
+Hard Drive / SSD
+
+tasks.json
+
+Program closes
+
+↓
+
+Still exists tomorrow
+
+The job of storage.py is constantly moving data between these two places.
+
+Disk
+ ↓ load()
+
+RAM
+ ↓ modify
+
+RAM
+ ↓ save()
+
+Disk
+
+So self.tasks is the working copy, while tasks.json is the permanent copy.
+
+Let's examine TaskStorage
+
+When you create it:
+
+storage = TaskStorage()
+
+Python runs
+
+def __init__(self, storage_path="tasks.json"):
+    self.storage_path = storage_path
+    self.tasks = {}
+    self.load()
+
+Three things happen.
+
+Step 1
+
+Remember where the file lives.
+
+self.storage_path
+
+↓
+
+"tasks.json"
+
+Nothing exciting yet.
+
+Step 2
+
+Create an empty dictionary.
+
+self.tasks = {}
+
+Think of it as an empty filing cabinet in memory.
+
+RAM
+
+{}
+Step 3
+
+Immediately call
+
+self.load()
+
+This is very important.
+
+Every time your application starts, it automatically tries to rebuild memory from the saved file.
+
+Inside load()
+
+Let's walk slowly.
+
+First line
+if os.path.exists(self.storage_path):
+
+This simply asks
+
+"Does tasks.json already exist?"
+
+If not,
+
+No file
+
+↓
+
+Nothing to load
+
+↓
+
+Keep empty dictionary
+If it exists
+
+Python opens it.
+
+with open(self.storage_path, "r") as f:
+
+Think of
+
+open()
+
+↓
+
+Open the filing cabinet drawer.
+
+The "r" means
+
+Read mode
+
+Nothing is being changed yet.
+
+Then
+json.load(f, cls=TaskDecoder)
+
+This line does much more than beginners realize.
+
+Suppose the file contains
+
+[
+    {
+        "id": 1,
+        "title": "Study",
+        "priority": 2
+    }
+]
+
+JSON only understands
+
+strings
+numbers
+lists
+dictionaries
+
+It does not understand
+
+Task
+
+So normally
+
+json.load()
+
+would return
+
+[
+    {
+        "id":1,
+        "title":"Study"
+    }
+]
+
+just dictionaries.
+
+But because you supplied
+
+cls=TaskDecoder
+
+Python says
+
+"Whenever you find a task dictionary, let TaskDecoder convert it."
+
+What TaskDecoder actually does
+
+Imagine JSON reads
+
+{
+    "id":5,
+    "title":"Study Python",
+    "priority":3
+}
+
+Normally that's just
+
+dict
+
+TaskDecoder changes it into
+
+Task object
+
+by doing something like
+
+Dictionary
+
+↓
+
+Task(...)
+
+↓
+
+Task.id = ...
+
+↓
+
+Task.priority = ...
+
+↓
+
+Return Task
+
+Now your program has real objects again.
+
+Then this happens
+for task in tasks_data:
+
+Suppose there are three tasks.
+
+Task A
+
+Task B
+
+Task C
+
+Each one is inserted into
+
+self.tasks
+
+using
+
+self.tasks[task.id] = task
+
+Now memory looks like
+
+{
+    1 : Task(...),
+    2 : Task(...),
+    3 : Task(...)
+}
+
+Notice:
+
+The JSON file is no longer needed while the program is running.
+
+Everything now lives in RAM.
+
+What happens when you add a task?
+
+Suppose
+
+storage.add_task(task)
+
+runs.
+
+Inside:
+
+self.tasks[task.id] = task
+
+Now RAM changes.
+
+Before
+
+{
+    1,
+    2
+}
+
+After
+
+{
+    1,
+    2,
+    3
+}
+
+Notice something.
+
+The file has not changed yet.
+
+Only memory changed.
+
+Immediately afterwards
+
+self.save()
+
+is called.
+
+This is why the project never loses data.
+
+Let's open save()
+with open(self.storage_path, "w") as f:
+
+The "w" means
+
+Write mode
+
+This is different from "r".
+
+Think of it like
+
+Erase old notebook
+
+↓
+
+Write new notebook
+
+This surprises many beginners.
+
+The program does not append one new task.
+
+Instead it rewrites the entire file.
+
+Then
+
+json.dump(
+    list(self.tasks.values()),
+    f,
+    cls=TaskEncoder,
+    indent=2
+)
+
+Let's unpack this.
+
+self.tasks.values()
+
+Remember
+
+self.tasks
+
+is a dictionary.
+
+{
+ 1: Task(...)
+ 2: Task(...)
+}
+
+.values() returns
+
+Task(...)
+Task(...)
+
+without the IDs.
+
+Then
+
+list(...)
+
+creates
+
+[
+ Task(...),
+ Task(...)
+]
+
+Then comes the important part.
+
+cls=TaskEncoder
+
+Python asks
+
+"How do I convert a Task into JSON?"
+
+Without TaskEncoder, this happens:
+
+TypeError
+
+Task is not JSON serializable
+
+because JSON doesn't understand custom classes.
+
+TaskEncoder
+
+Inside
+
+def default(self, obj):
+
+Python passes
+
+Task(...)
+
+into
+
+obj
+
+Then
+
+obj.__dict__
+
+returns all instance variables.
+
+Something like
+
+{
+    "title":"Study",
+    "priority":HIGH,
+    "status":TODO
+}
+
+But there's another problem.
+
+Enums
+
+Priority is not
+
+3
+
+It's probably
+
+TaskPriority.HIGH
+
+JSON can't save that.
+
+So this line
+
+task_dict["priority"] = obj.priority.value
+
+changes
+
+TaskPriority.HIGH
+
+↓
+
+3
+
+Now JSON understands it.
+
+Datetimes
+
+Same issue.
+
+datetime.now()
+
+is an object.
+
+JSON doesn't know how to save it.
+
+So
+
+.isoformat()
+
+changes
+
+datetime
+
+↓
+
+"2026-07-01T10:42:15"
+
+Now JSON can store it.
+
+Finally
+
+json.dump() writes everything.
+
+Your file becomes something like
+
+[
+  {
+    "id":1,
+    "title":"Study",
+    "priority":2,
+    "status":"todo"
+  }
+]
+One thing many beginners misunderstand
+
+Notice that almost every modifying function calls save().
+
+For example:
+
+add_task()
+
+↓
+
+save()
+update_task()
+
+↓
+
+save()
+delete_task()
+
+↓
+
+save()
+
+This means the application follows a simple strategy:
+
+Every change is immediately written to disk.
+
+There is no "Save" button.
+
+If you delete a task, it's already gone from the file.
+
+A mental model
+
+I like to picture TaskStorage as a librarian.
+
+                 TaskManager
+                      │
+         "Please add this task."
+                      │
+                      ▼
+                TaskStorage
+        (the librarian)
+
+The librarian has two desks.
+
+Desk 1 — Working desk (RAM)
+self.tasks
+
+This is where all work happens.
+
+Adding.
+
+Deleting.
+
+Searching.
+
+Filtering.
+
+Everything is fast because it's in memory.
+
+Desk 2 — Archive room (disk)
+tasks.json
+
+This is permanent storage.
+
+The librarian occasionally walks over and updates the archive.
+
+Archive
+
+↓
+
+load()
+
+↓
+
+Working desk
+
+↓
+
+modify
+
+↓
+
+save()
+
+↓
+
+Archive
+
+The application never edits the archive directly. It always edits the working copy first, then synchronizes it back to disk.
+
+Three small requirements to validate your understanding
+
+Instead of giving you the implementation, here are three requirements that exercise different parts of storage.py:
+
+Add a feature that records when a task was last viewed. Whenever a user requests a task's details, persist the timestamp so that it is still available after restarting the application.
+Introduce an archive/export capability. Allow the application to save the current set of tasks to a second JSON file without affecting the primary tasks.json file. This will test whether you understand the difference between in-memory data and the destination file.
+Persist a new piece of task metadata. Add a new attribute to a task (for example, an estimate, category, or owner) and ensure that it survives a full cycle of creating a task, saving it, closing the application, and loading it again. This will require understanding both serialization (saving) and deserialization (loading).
+
+These three requirements progressively test:
+
+how data flows through the application,
+how objects are converted to and from JSON,
+and where persistence responsibilities belong. If you can implement all three without breaking the existing architecture, you'll have a solid grasp of how storage.py works.
+
+****My findings****
+
+storage.py persists data by saving all tasks into a local JSON file (tasks.json). On startup, load() reads the file and rebuilds Task objects into self.tasks (in-memory dictionary). self.tasks is the working memory where all operations (add/update/delete) happen first.
+Every change modifies self.tasks, not the file directly. After any change, save() is called to persist updates to disk. save() converts all Task objects into JSON-safe dictionaries using TaskEncoder.
+Enums and datetime objects are converted into JSON-friendly values (e.g., .value, .isoformat()). The entire task list is rewritten to tasks.json using json.dump(). When loading, TaskDecoder converts JSON dictionaries back into Task objects.
+So the system works as: load → work in RAM → rewrite full file on every change.
+
+In the beginning my view was there are files and I should everything, but instead I should be asking questions like what does app.py do, what does storage.py do etc.
